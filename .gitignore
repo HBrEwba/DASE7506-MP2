@@ -1,7 +1,22 @@
+# Python / env
 __pycache__/
 *.py[cod]
+*$py.class
 .venv/
 venv/
-runs/
+.env
+.env.*
+
+# OS / editor
 .DS_Store
 Thumbs.db
+*.swp
+.idea/
+.vscode/
+
+# Local experiment clutter under code/runs (keep checkpoint + official scores)
+code/runs/**/__pycache__/
+code/runs/*-predictions.json
+code/runs/baseline-*-predictions.json
+code/runs/ablate_*/
+code/runs/model_bundle_v1*/

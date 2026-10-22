@@ -1,0 +1,22 @@
+{
+  "protocol": "dase7506-mp2-open-hard-verifier-v5",
+  "method": "pca_listwise_softmax",
+  "seed": 42,
+  "lr": 0.05,
+  "epochs": 300,
+  "l2": 0.0001,
+  "majority_gate": 0,
+  "train_hard_only": false,
+  "pca": {
+    "k": 161,
+    "explained_variance": 0.9003093242645264,
+    "var_thresh": 0.9
+  },
+  "feature_dim": 339,
+  "base_dim": 17,
+  "ablate": "full",
+  "validation_accuracy": 91.2280701754386,
+  "validation_correct": 728,
+  "validation_n": 798,
+  "baseline_validation_accuracy": 85.46365914786968
+}
