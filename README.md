@@ -2,7 +2,7 @@
 
 **课程：** DASE7506 Advanced Machine Learning Methods · Fall 2026  
 **作业：** [MP2 — Selecting Reliable LLM Reasoning](https://xudongwu-0.github.io/courses/dase7506/mp2/)  
-**学生：** BORUI HAN（学号：【待填】）  
+**学生：** BORUI HAN（3036781090）  
 **协议：** `dase7506-mp2-open-hard-verifier-v5`
 
 本仓库在课程官方材料之上实现并冻结了一种训练内 PCA + 列表 Softmax 线性打分方法，供同伴用官方 `predict.py` / `score_predictions.py` **离线复现**（无需重训即可验证分数）。
