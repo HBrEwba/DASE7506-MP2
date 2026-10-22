@@ -3,8 +3,8 @@
 **课程：** DASE7506 Advanced Machine Learning Methods · Fall 2026  
 **作业：** MP2 — Selecting Reliable LLM Reasoning  
 **协议：** `dase7506-mp2-open-hard-verifier-v5`  
-**作者：** BORUI HAN（学号：【待填】）  
-**代码与检查点：** 【待填公开 GitHub 仓库链接】 / `code/runs/model_bundle`  
+**作者：** BORUI HAN（学号：3036781090）  
+**代码与检查点：** https://github.com/HBrEwba/DASE7506-MP2 （`main`） / `code/runs/model_bundle`  
 **日期：** 2026-10-22
 
 ---
@@ -154,15 +154,15 @@ python score_predictions.py --split test \
 
 - **AI 辅助：** 使用 AI 编程助手参与代码实现、实验脚本与报告初稿整理；方法设计（多数票门控、训练内 PCA、列表 softmax、消融决策）由作者理解并负责。作者已阅读并能够解释全部提交代码与训练流程。
 - **复用：** 数据与评测来自课程仓库 DASE7506-MP2（GSM8K / Qwen3-0.6B 候选与嵌入，见 `data/LICENSE.txt`、`NOTICE.txt`）。未使用外部数据集或额外预训练权重。
-- **声明签字：** 【姓名 / 学号 / 日期】
+- **声明签字：** BORUI HAN / 3036781090 / 2026-10-22
 
 ---
 
 ## 8. 提交清单（作者待办）
 
-- [ ] 填写学号与姓名  
-- [ ] 将代码与 `runs/model_bundle` 推送到**公开** GitHub 仓库，并固定 commit / release  
-- [ ] 将本报告导出为 ≤10 页 PDF（可删减第 2.3 节细节表）  
+- [x] 填写学号与姓名  
+- [x] 将代码与 `runs/model_bundle` 推送到**公开** GitHub 仓库（https://github.com/HBrEwba/DASE7506-MP2）  
+- [x] 将本报告导出为 PDF：`report/REPORT.pdf`（由 `REPORT.md` 生成）  
 - [ ] 在 [MP2 网站](https://xudongwu-0.github.io/courses/dase7506/mp2/) 提交：**学号、官方 scorer 的 test accuracy（79.4433）、代码链接、检查点链接**  
 - [ ] 按网站流程创建 GitHub issue 完成最终提交（仅生成链接不等于提交）  
 - [ ] 截止：**2026-10-31 23:59（北京时间）**

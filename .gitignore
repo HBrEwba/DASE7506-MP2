@@ -20,3 +20,4 @@ code/runs/*-predictions.json
 code/runs/baseline-*-predictions.json
 code/runs/ablate_*/
 code/runs/model_bundle_v1*/
+report/REPORT.html
