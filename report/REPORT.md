@@ -1,144 +1,121 @@
-# MP2 课程报告：基于一致性与表征的 LLM 候选答案选择
+# Selecting Reliable LLM Reasoning with Consistency Features and Train-Fit PCA
 
-**课程：** DASE7506 Advanced Machine Learning Methods · Fall 2026  
-**作业：** MP2 — Selecting Reliable LLM Reasoning  
-**协议：** `dase7506-mp2-open-hard-verifier-v5`  
-**作者：** BORUI HAN（学号：3036781090）  
-**代码与检查点：** https://github.com/HBrEwba/DASE7506-MP2 （`main`） / `code/runs/model_bundle`  
-**日期：** 2026-10-22
+Student ID: 3036781090
 
----
+## Abstract
 
-## 1. 任务与问题设定
+This project studies how to select one reliable answer among four LLM candidate solutions for the same grade-school maths question. The official scorer grades only the final numeric answer, not the validity of every reasoning step. The supplied inputs are the question text, four candidate traces, and frozen whole-trace embeddings of shape [N, 4, 1024].
 
-给定一道小学数学应用题（源自 GSM8K）及同一问题的 **4 条 LLM 候选推理轨迹**，方法需输出一个整数索引 \(i\in\{0,1,2,3\}\)。官方评分器仅用 `common.parse_answer` 核对所选候选的**最终数值答案**是否与参考答案等价（支持分数/小数等价），**不**评价推理过程是否步步正确。
+The final method fits PCA on training candidate embeddings (90% variance retained, k=161), concatenates the projected vectors with 17 handcrafted consistency and geometry features (339 dimensions per candidate), and trains a linear listwise softmax scorer on all training questions. At inference it always selects argmax over the four scores; no majority-vote gate is used.
 
-数据划分：训练集 4755、验证集 798、测试集 467；互不重叠。每组至少有一个最终答案正确的候选；测试集刻意更难（每组至少存在两种不同的可解析答案）。输入还包括冻结的整段轨迹嵌入 `embeddings`，形状 \([N,4,1024]\)。
+The checkpoint was selected on the validation split only. Validation accuracy is **91.2281%** (728/798), compared with **85.4637%** for a parse-answer majority baseline. On the frozen test set the method achieves **79.4433%** (371/467), compared with **69.3790%** for the same baseline, a gain of about +10.1 percentage points. Uncompressed inference assets occupy approximately **0.60 MiB**, and CPU evaluation with four threads finishes in well under one second on this machine. These values satisfy the limits of 16 MiB of inference assets and 30 seconds for complete CPU evaluation.
 
-约束要点：仅用训练集拟合；验证集做开发与选型；测试参考不得用于训练/调参/查表；推理资产 ≤16 MiB；完整 CPU 评测（4 线程）≤30 s；禁止评测期调用 LLM API 或外挂预训练权重。
+## 1. Task
 
-本报告关注的研究问题：
+The task is candidate selection for GSM8K-style questions under protocol `dase7506-mp2-open-hard-verifier-v5`. For each question the method returns exactly one index in {0,1,2,3}. Ranking uses selection accuracy on the complete bank; higher is better. The fixed scorer checks the selected candidate’s final answer with `common.parse_answer`, including equivalent fractions and decimals. Any correct candidate earns the point.
 
-1. **候选间一致性（多数票）能走多远？** 在何种难度上会系统性失效？
-2. **冻结嵌入是否提供多数票之外的可分信号？** 用训练内 PCA 投影后，线性排序能否显著超过一致性基线？
-3. **强多数（maj3）是否应硬门控？** 在弱/强表征模型下结论是否一致？
+Splits contain 4,755 / 798 / 467 train / validation / test questions and do not overlap. Every group has at least one correct final answer; test groups contain at least two different valid parsed answers. Training and method selection used the validation split; the test split was evaluated only once after freezing the checkpoint. No external datasets, additional pretrained weights, or evaluation-time LLM/API calls were used.
 
----
+## 2. Core methods
 
-## 2. 方法
+The final student builds on a training-free majority baseline and replaces it with a train-fit linear listwise scorer over PCA-augmented features.
 
-### 2.1 基线：解析答案多数票
+### 2.1 Majority baseline
 
-对每条候选调用 `parse_answer`。若存在**唯一众数**，选该答案对应的第一个候选；否则选与四个嵌入均值 L2 最近的候选。该基线训练无关，验证集 **85.46%**。
+Each candidate is parsed with `parse_answer`. If a unique modal answer exists, the first candidate with that answer is selected; otherwise the candidate closest in L2 distance to the mean of the four embeddings is chosen. This baseline needs no checkpoint and reaches **85.46%** validation accuracy. Failure analysis on validation (116 errors) shows 60 unique wrong majorities and 56 tie / embedding-fallback misses. Unique maj3 (three candidates share an answer) is about 96% reliable; maj2 is about 71%. Oracle accuracy is 100%: every question has a correct candidate, so the problem is recognition rather than generation.
 
-失败结构（验证集 116 错）：唯一错误众数 60、平票/回退失败 56。其中 **maj3（三人同答）** 约 96% 可靠，**maj2** 约 71%；平票时纯嵌入最近邻较弱。Oracle（四人中至少一人正确）为 100%，说明上限在“识别”而非“生成”。
+### 2.2 Handcrafted consistency features
 
-### 2.2 最终方法：训练内 PCA + 列表 Softmax 线性打分
+For each candidate the method builds a 17-dimensional vector: parseability; agreement fraction with other parsed answers; unique-mode / tied-top / singleton flags; mode strength; negative L2 distance to the mean embedding; cosine similarity to the mean; mean and max pairwise cosine to the other three candidates; text length; lexical overlap with the question; and three light interactions (mode×cos, agreement×cos, minority×cos). These features alone already beat majority voting when scored with a listwise linear model (87.09% validation).
 
-**特征（每候选 339 维）：**
+### 2.3 Train-fit PCA on frozen embeddings
 
-1. **17 维手工特征**：是否可解析、答案同意比例、是否唯一众数成员 / 并列顶端 / 单例答案、众数强度、到均值嵌入的 −L2、与均值余弦、与其它候选的均/最大成对余弦、长度与问题词重叠、以及 mode×cos、agreement×cos、minority×cos 交互项。
-2. **全局 PCA**：对训练集全部候选嵌入拟合 PCA，方差阈值 **0.9** → \(k=161\)（\(k\) 仅由训练方差决定，不在验证集上搜）。特征为 \((\mathbf{e}-\boldsymbol{\mu}_{\mathrm{pca}})W\)。
-3. **局部 PCA**：同一组 \(W\) 作用于题内残差 \((\mathbf{e}-\bar{\mathbf{e}})W\)，刻画相对几何。
+PCA mean and components are fit on **training candidate embeddings only**, with variance threshold **0.9**, which yields k=161 without searching k on validation. Each candidate receives a global projection (e − μ)W and a local (within-question) projection (e − ē)W using the same components. Concatenating the 17 handcrafted features with both projections gives a **339-dimensional** per-candidate vector. Features are standardized with training mean and standard deviation.
 
-**模型：** 列表 softmax 交叉熵（题内正确候选上均匀目标），余弦退火 SGD，lr=0.05，epochs=300，L2=1e-4，seed=42；特征用训练集均值/方差标准化。在**全部训练题**上拟合（非仅 hard 子集）。
+### 2.4 Linear listwise softmax scorer
 
-**推断：** 对四候选打分后 `argmax`。**不再使用 maj3 硬门控**（见消融：在 PCA 表征下，打分器单独优于 gate3）。
+A linear scorer is trained with listwise softmax cross-entropy over the four candidates of each question. When several candidates are correct, the target is uniform over the correct set. Optimization uses SGD with cosine learning-rate decay, learning rate 0.05, 300 epochs, L2 weight 1e-4, and seed 42. Training uses **all** training questions (not only hard non-maj3 cases). Inference always returns argmax of the four scores. A maj3 hard gate is **not** used in the final method: with PCA features the scorer alone outperforms gating (Section 3).
 
-**资产：** `runs/model_bundle/{scorer.npz,meta.json}`，PCA 存 float32，合计约 **0.60 MiB**（≪16 MiB）。依赖仅 `numpy==2.5.3`。
+### 2.5 Checkpoint and interface
 
-### 2.3 曾尝试但未采用的改进（验证集未超过 91.23%）
+All inference assets live in `code/runs/model_bundle/` (`scorer.npz` and `meta.json`), about **0.60 MiB** uncompressed. The public `predict(bank, arrays, checkpoint)` interface in `submission.py` loads this bundle and returns one integer index per question in bank order. Dependencies for the supplied tools and the method are limited to `numpy==2.5.3`.
 
-在冻结当前最优之后，又针对剩余约 70 个验证错误做了一轮探索，**均未超过 91.2281%**，故**保留原检查点，未用测试集重调**：
+## 3. Controlled evidence and experiments
 
-| 尝试 | 验证集结论 |
-|---|---|
-| 小 MLP（32–128 hidden）及 dropout/L2 变体 | 最好约 90.98%，低于线性 |
-| 不确定时回退多数票（margin 阈值） | 净伤害（fix≪break） |
-| maj3 几何规则（单例更靠近均值则翻转等） | ≤91.23%，或明显下降 |
-| hard 子集残差 MLP 混合 | 随 α 单调变差 |
-| 多种子分数平均、pairwise+listwise、熵特征 | 持平或略差 |
+All selection decisions used validation accuracy. Test was scored once after freezing. Ablations share the same data splits, parser, and official scorer.
 
-结论：在当前特征下，**线性列表模型已较充分**；剩余错误更像标签/表征不可分，而非欠拟合。
+### 3.1 Main results
 
----
-
-## 3. 实验与消融
-
-评测命令与官方一致：`predict.py` + `score_predictions.py`。方法选型**只看验证集**；测试集在冻结后**只跑一次**。
-
-### 3.1 主结果
-
-| 划分 | 多数票基线 | v1（hard 线性+gate3，无 PCA） | **最终方法 v2** |
+| Split | Majority baseline | v1 (hard-only linear + maj3 gate, no PCA) | **Final (PCA + listwise, no gate)** |
 |---|---:|---:|---:|
-| Validation | 85.4637%（682/798） | 87.4687%（698/798） | **91.2281%（728/798）** |
-| Test | 69.3790%（324/467） | 72.5910%（339/467） | **79.4433%（371/467）** |
+| Validation | 85.4637% (682/798) | 87.4687% (698/798) | **91.2281% (728/798)** |
+| Test | 69.3790% (324/467) | 72.5910% (339/467) | **79.4433% (371/467)** |
 
-测试集更难（多样可解析答案），绝对精度低于验证集符合数据构造；相对基线仍有约 **+10.1 pp**（test）与 **+5.8 pp**（val）。
+The lower absolute test accuracy is expected from the harder test construction (diverse valid answers). Relative to the majority baseline the final method gains about **+5.8 pp** on validation and **+10.1 pp** on test.
 
-### 3.2 消融（验证集）
+### 3.2 Ablations (validation)
 
-| 变体 | Val Acc |
+| Configuration | Val accuracy |
 |---|---:|
-| 多数票 + 嵌入回退 | 85.46% |
-| 仅 17 维手工特征 + 列表线性（train-all，无门控） | 87.09% |
-| v1：hard-only 线性 + maj3 门控（无 PCA） | 87.47% |
-| PCA（k=161）+ 列表线性 + maj3 门控 | 90.48% |
-| **PCA + 列表线性 + 无门控（最终）** | **91.23%** |
-| PCA + 额外“富特征”（答案是否出现在题面、数字支持度等） | 90.98%（略差） |
+| Majority + embedding fallback | 85.46% |
+| 17-D features + listwise linear (train-all, no gate) | 87.09% |
+| v1: hard-only linear + maj3 gate (no PCA) | 87.47% |
+| PCA (k=161) + listwise linear + maj3 gate | 90.48% |
+| **PCA + listwise linear + no gate (final)** | **91.23%** |
+| PCA + extra “rich” text/numeric heuristics + no gate | 90.98% |
 
-要点：
+PCA is the main gain (about +4 pp over the no-PCA linear scorer). Removing the maj3 gate helps once the PCA scorer can correct some wrong maj3 herds without destroying easy majority-correct questions. Extra rich heuristics slightly hurt and were dropped. Across five training seeds the final configuration stays in 90.98–91.23% (seed 42 = 91.23%).
 
-- **PCA 是主要增益来源**（约 +4 pp 相对无 PCA 线性）。
-- 在强 PCA 打分器下，**去掉 maj3 门控更好**：打分器可纠正部分错误 maj3，且不显著破坏简单题。
-- 额外启发式文本特征未带来稳定收益，故最终配置保持简洁的 17 维 + PCA。
+### 3.3 Resource measurements
 
-### 3.3 资源
-
-| 项目 | 数值 |
+| Quantity | Value |
 |---|---|
-| 推理资产（未压缩合计） | ≈ 0.60 MiB |
-| 本地预测耗时（validation / test，4 线程） | ≈ 0.31 s / 0.21 s |
-| 训练 | CPU，NumPy 纯实现，分钟级 |
-| 随机种子 | 42（五种子验证波动极小） |
+| Uncompressed inference assets | ≈ 0.60 MiB (limit 16 MiB) |
+| Local predict time (validation / test, 4 threads) | ≈ 0.31 s / 0.21 s (limit 30 s for predict+score) |
+| Training | CPU NumPy, minutes-scale |
+| Seed | 42 |
 
-远低于 16 MiB / 30 s 约束。
+## 4. Rejected modifications
 
----
+Each of the following was tried on validation after the final checkpoint existed. **None exceeded 91.2281%**, so the checkpoint was left unchanged and test was not re-scored.
 
-## 4. 误差分析
+| Change | Val outcome |
+|---|---|
+| Tiny MLP (32–128 hidden) with dropout / L2 variants | Best ≈ 90.98%, below linear |
+| Margin abstain → fall back to majority | Net harmful (breaks > fixes) |
+| maj3 geometry flip (override when singleton is closer to mean, etc.) | ≤ 91.23% or clearly worse |
+| Hard-subset residual MLP blend | Monotone degradation with blend weight |
+| Multi-seed score averaging; pairwise + listwise; entropy features | Flat or slightly worse |
 
-最终方法验证集错 **70** 题，粗分：平票相关约 31、maj2 约 23、maj3 约 16。
+Deeper nonlinearity did not help under the asset budget: with the present features the linear listwise model is already well matched to the signal. Remaining errors look more like inseparable geometry or wrong-majority herds than underfitting.
 
-**例 1（平票）：** Megan 买蛋题。解析答案 `['9','18','6',None]`，金标 `9`，模型选 `6`。四人无一致众数，需完全依赖表征/长度等弱线索。
+No external data, pretrained weights, answer lookup tables, cached predictions, or evaluation-time network access were used.
 
-**例 2（maj2）：** Grace 南瓜派题。解析 `['6','4','2','4']`，金标 `4`（出现两次），模型选 `6`。弱多数本身不可靠，打分器仍可能偏好错误单例。
+## 5. Final result
 
-**例 3（maj3 羊群错误）：** Yun 回形针题。解析 `['9','17','17','17']`，金标 `9`。三人同错形成强先验；嵌入上正确单例常呈“离群”，与“正确答案更居中”的多数正确题模式相反，几何启发式容易两头不讨好。
+The frozen validation score is **91.2281%** (728/798). The frozen full-test score is **79.4433%** (371/467). The majority baseline on the same protocol scores 85.4637% validation and 69.3790% test. Uncompressed inference assets occupy about **0.60 MiB**, and complete CPU prediction with four threads finishes in well under one second on this machine. The 16 MiB asset limit and 30-second evaluation limit are met with large margins.
 
-整体观察：评分只看最终数字，模型学到的主要是**答案一致性结构 + 轨迹嵌入几何**，而非逐步验算。因此“推理看起来对但算错”与“推理跳跃但答案对”在监督信号上不可分。
+## 6. Cost, limitations, and integrity
 
----
+Training uses only NumPy on CPU; a full train run is on the order of minutes on this box. Inference loads a sub-megabyte checkpoint and does not call an LLM.
 
-## 5. 局限与后续
+Main limitations:
 
-1. **不验证算术步骤**：轻量数字一致性特征在剩余错误上增益有限，完整符号执行超出本作业资产/时间设定。
-2. **错误 maj3 仍难**：与三人同错绑定时，监督与几何信号都弱。
-3. **验证/测试难度差**：测试构造含多样答案，泛化需审计集进一步确认。
-4. **未使用外部知识/更大模型**：符合课程约束，但也限制了上限。
+- The scorer grades final answers only, so the model mainly learns answer-agreement structure and embedding geometry, not step-by-step arithmetic verification. Lightweight numeric-consistency features did not lift the remaining errors enough to keep.
+- Wrong maj3 herds remain hard: when three candidates share an incorrect answer, both agreement and “gold as outlier” geometry fight the correct singleton.
+- Validation and test difficulty differ by construction; generalization should also be checked on any instructor audit bank using the same frozen checkpoint API.
+- Capacity for larger nonlinear models is limited by the spirit of the asset budget; the MLP trials that were run did not beat the linear scorer.
 
-可能的后续（未实施）：题型分层、更结构化的中间量抽取、或在资产允许下的极浅交互网络——但本轮 MLP 未超过线性，需谨慎。
+## 7. Reproducibility and assistance
 
----
-
-## 6. 复现要点
+Install, train and evaluate from `code/` exactly as follows (Python 3.12+; this box used 3.13):
 
 ```bash
-cd code
 python -m venv .venv && source .venv/bin/activate
 python -m pip install -r requirements.txt
 python check_data.py
-python train.py --output runs/model_bundle --seed 42 --pca-var 0.9 --majority-gate 0
+python train.py --output runs/model_bundle --seed 42 --lr 0.05 --epochs 300 \
+  --l2 1e-4 --pca-var 0.9 --majority-gate 0
 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MKL_NUM_THREADS=4 \
 python predict.py --method submission.py --checkpoint runs/model_bundle \
   --split test --output runs/test-predictions.json
@@ -146,36 +123,16 @@ python score_predictions.py --split test \
   --predictions runs/test-predictions.json --output runs/test-score.json
 ```
 
-同伴复现可直接使用提交的 `runs/model_bundle`，无需重训。详细笔记见 `code/runs/NOTES.md`。
+Peers may skip training and use the shipped `runs/model_bundle`. Experiment notes are in `code/runs/NOTES.md`. Repository: https://github.com/HBrEwba/DASE7506-MP2
 
----
+AI assistance was used for coding support, experiment scripting, and refining the report. Method choices (majority analysis, train-fit PCA, listwise softmax, ablation decisions), measurements, and the frozen checkpoint were produced and evaluated within this project codebase. The author can explain the submitted implementation and training procedure. Course data and the fixed evaluator come from the official DASE7506-MP2 package (GSM8K / Qwen3-0.6B candidates and embeddings; see `code/data/LICENSE.txt` and `NOTICE.txt`).
 
-## 7. AI 使用与复用声明（占位，提交前请核对）
+## References
 
-- **AI 辅助：** 使用 AI 编程助手参与代码实现、实验脚本与报告初稿整理；方法设计（多数票门控、训练内 PCA、列表 softmax、消融决策）由作者理解并负责。作者已阅读并能够解释全部提交代码与训练流程。
-- **复用：** 数据与评测来自课程仓库 DASE7506-MP2（GSM8K / Qwen3-0.6B 候选与嵌入，见 `data/LICENSE.txt`、`NOTICE.txt`）。未使用外部数据集或额外预训练权重。
-- **声明签字：** BORUI HAN / 3036781090 / 2026-10-22
+[1] Karl Cobbe et al. “Training Verifiers to Solve Math Word Problems.” arXiv:2110.14168, 2021. (GSM8K)
 
----
+[2] Qwen Team. “Qwen3 Technical Report.” arXiv:2505.09388, 2025. (candidate traces prepared with Qwen3-0.6B; revision recorded in the data manifest)
 
-## 8. 提交清单（作者待办）
+[3] Harold Hotelling. “Analysis of a Complex of Statistical Variables into Principal Components.” Journal of Educational Psychology, 24(6):417–441, 1933.
 
-- [x] 填写学号与姓名  
-- [x] 将代码与 `runs/model_bundle` 推送到**公开** GitHub 仓库（https://github.com/HBrEwba/DASE7506-MP2）  
-- [x] 将本报告导出为 PDF：`report/REPORT.pdf`（由 `REPORT.md` 生成）  
-- [ ] 在 [MP2 网站](https://xudongwu-0.github.io/courses/dase7506/mp2/) 提交：**学号、官方 scorer 的 test accuracy（79.4433）、代码链接、检查点链接**  
-- [ ] 按网站流程创建 GitHub issue 完成最终提交（仅生成链接不等于提交）  
-- [ ] 截止：**2026-10-31 23:59（北京时间）**
-
----
-
-## 附录：关键文件路径
-
-| 路径 | 说明 |
-|---|---|
-| `code/submission.py` | 推断接口 |
-| `code/features.py` / `code/train.py` | 特征与训练 |
-| `code/runs/model_bundle/` | 推理资产 |
-| `code/runs/validation-score.json` | 验证官方分数 |
-| `code/runs/test-score.json` | 测试官方分数（冻结后一次） |
-| `code/runs/NOTES.md` | 英文实验笔记 |
+[4] Xudong Wu. DASE7506 Mini-Project 2: Selecting Reliable LLM Reasoning. Course materials, Fall 2026. https://github.com/xudongwu-0/DASE7506-MP2
