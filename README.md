@@ -5,7 +5,7 @@ HAN BORUI (3036781090)
 | Split | Accuracy | Correct / N |
 |---|---:|---:|
 | **Validation** | **91.2281%** | 728 / 798 |
-| **Test** (scored once after validation selection) | **79.4433%** | 371 / 467 |
+| **Test**  | **79.4433%** | 371 / 467 |
 
 ## Layout
 
