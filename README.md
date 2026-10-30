@@ -106,8 +106,3 @@ python train.py --output runs/model_bundle --seed 42 --lr 0.05 --epochs 300 \
 
 ---
 
-## 归属与声明
-
-- 题目与参考答案源自 [GSM8K](https://github.com/openai/grade-school-math)；候选与嵌入由课程方基于 Qwen3-0.6B 制备。详见 `code/data/LICENSE.txt`、`code/data/NOTICE.txt`。
-- AI 辅助与复用声明见 `report/REPORT.md` 第 7 节（提交前请核对并签字）。
-- 网站提交截止：**2026-10-31 23:59（北京时间）**。
