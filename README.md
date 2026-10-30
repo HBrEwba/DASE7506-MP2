@@ -1,6 +1,6 @@
 # DASE7506 Mini-Project 2 — Selecting Reliable LLM Reasoning
 
-BORUI HAN (3036781090)  
+HAN BORUI (3036781090)  
 
 | Split | Accuracy | Correct / N |
 |---|---:|---:|
